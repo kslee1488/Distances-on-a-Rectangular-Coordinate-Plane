@@ -1,561 +1,611 @@
-import React, { useState, useRef } from 'react';
-import { Info, MoveHorizontal, MoveVertical, Navigation, User, Play, CheckCircle, XCircle } from 'lucide-react';
-
-const GRID_SIZE = 10;
-const SVG_SIZE = 500;
-const SCALE = SVG_SIZE / (GRID_SIZE * 2);
-
-// A simple utility to format inline LaTeX-style syntax for standard React rendering
-const MathText = ({ children }) => {
-  if (typeof children !== 'string') return children;
-  const parts = children.split(/(\$\$.*?\$\$|\$.*?\$)/g);
-  return (
-    <>
-      {parts.map((part, i) => {
-        if (part.startsWith('$$') && part.endsWith('$$')) {
-          let math = part.slice(2, -2);
-          math = math.replace(/_([a-zA-Z0-9]+)/g, '<sub>$1</sub>');
-          math = math.replace(/\^([a-zA-Z0-9]+)/g, '<sup>$1</sup>');
-          return <div key={i} className="text-center my-2 font-serif italic text-lg text-slate-800" dangerouslySetInnerHTML={{__html: math}} />;
-        } else if (part.startsWith('$') && part.endsWith('$')) {
-          let math = part.slice(1, -1);
-          math = math.replace(/_([a-zA-Z0-9]+)/g, '<sub>$1</sub>');
-          math = math.replace(/\^([a-zA-Z0-9]+)/g, '<sup>$1</sup>');
-          return <span key={i} className="font-serif italic bg-slate-100 px-1 rounded mx-0.5 text-slate-800" dangerouslySetInnerHTML={{__html: math}} />;
-        }
-        return <span key={i}>{part}</span>;
-      })}
-    </>
-  );
-};
-
-export default function App() {
-    const [pointA, setPointA] = useState({ x: -5, y: 4 });
-    const [pointB, setPointB] = useState({ x: 4, y: -3 });
-    const [activePoint, setActivePoint] = useState(null);
-    const [mode, setMode] = useState('free'); // 'free', 'horizontal', 'vertical'
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coordinate Distance Animation</title>
     
-    // New states for Quiz Modes
-    const [appMode, setAppMode] = useState('explore'); // 'explore', 'name', 'quiz1', 'quiz2'
-    const [targetQuiz, setTargetQuiz] = useState('');
-    const [userName, setUserName] = useState('');
-    const [score, setScore] = useState(0);
-    const [attempts, setAttempts] = useState(0);
-    const [userAnswer, setUserAnswer] = useState('');
-    const [quizFeedback, setQuizFeedback] = useState('');
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
     
-    const svgRef = useRef(null);
-    const autoAdvanceTimer = useRef(null);
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel for compiling JSX in the browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body class="bg-slate-100">
+    <div id="root"></div>
 
-    // Helpers to convert between standard cartesian coords and SVG canvas coords
-    const getSvgX = (x) => SVG_SIZE / 2 + x * SCALE;
-    const getSvgY = (y) => SVG_SIZE / 2 - y * SCALE;
-    const getCartX = (svgX) => Math.round((svgX - SVG_SIZE / 2) / SCALE);
-    const getCartY = (svgY) => Math.round(-(svgY - SVG_SIZE / 2) / SCALE);
+    <script type="text/babel">
+        const { useState, useRef } = React;
 
-    const handlePointerDown = (e, pointName) => {
-        if (appMode !== 'explore') return; // Disable dragging in quiz mode
-        e.stopPropagation();
-        setActivePoint(pointName);
-    };
+        // --- Inline SVG Icons (Replacing lucide-react) ---
+        const Info = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>;
+        const MoveHorizontal = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="18 8 22 12 18 16"/><polyline points="6 8 2 12 6 16"/><line x1="2" y1="12" x2="22" y2="12"/></svg>;
+        const MoveVertical = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polyline points="8 18 12 22 16 18"/><polyline points="8 6 12 2 16 6"/><line x1="12" y1="2" x2="12" y2="22"/></svg>;
+        const Navigation = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>;
+        const User = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+        const Play = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><polygon points="5 3 19 12 5 21 5 3"/></svg>;
+        const CheckCircle = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>;
+        const XCircle = ({ className }) => <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>;
 
-    const handlePointerMove = (e) => {
-        if (appMode !== 'explore') return; // Disable dragging in quiz mode
-        if (!activePoint || !svgRef.current) return;
-        const rect = svgRef.current.getBoundingClientRect();
-        
-        // Calculate raw SVG coordinates factoring in current scale of the responsive element
-        const scaleX = SVG_SIZE / rect.width;
-        const scaleY = SVG_SIZE / rect.height;
-        
-        const svgX = (e.clientX - rect.left) * scaleX;
-        const svgY = (e.clientY - rect.top) * scaleY;
-        
-        let cartX = getCartX(svgX);
-        let cartY = getCartY(svgY);
-        
-        // Keep the point within the visible grid bounds
-        cartX = Math.max(-GRID_SIZE, Math.min(GRID_SIZE, cartX));
-        cartY = Math.max(-GRID_SIZE, Math.min(GRID_SIZE, cartY));
+        const GRID_SIZE = 10;
+        const SVG_SIZE = 500;
+        const SCALE = SVG_SIZE / (GRID_SIZE * 2);
 
-        // Enforce specific logic based on the selected mode
-        if (mode === 'horizontal') {
-            if (activePoint === 'A') {
-                setPointA({ x: cartX, y: cartY });
-                setPointB(prev => ({ ...prev, y: cartY })); // Force B to align horizontally
-            } else {
-                setPointB({ x: cartX, y: cartY });
-                setPointA(prev => ({ ...prev, y: cartY })); // Force A to align horizontally
-            }
-        } else if (mode === 'vertical') {
-             if (activePoint === 'A') {
-                setPointA({ x: cartX, y: cartY });
-                setPointB(prev => ({ ...prev, x: cartX })); // Force B to align vertically
-            } else {
-                setPointB({ x: cartX, y: cartY });
-                setPointA(prev => ({ ...prev, x: cartX })); // Force A to align vertically
-            }
-        } else {
-            if (activePoint === 'A') setPointA({ x: cartX, y: cartY });
-            if (activePoint === 'B') setPointB({ x: cartX, y: cartY });
-        }
-    };
+        // A simple utility to format inline LaTeX-style syntax for standard React rendering
+        const MathText = ({ children }) => {
+            if (typeof children !== 'string') return children;
+            const parts = children.split(/(\$\$.*?\$\$|\$.*?\$)/g);
+            return (
+                <React.Fragment>
+                {parts.map((part, i) => {
+                    if (part.startsWith('$$') && part.endsWith('$$')) {
+                    let math = part.slice(2, -2);
+                    math = math.replace(/_([a-zA-Z0-9]+)/g, '<sub>$1</sub>');
+                    math = math.replace(/\^([a-zA-Z0-9]+)/g, '<sup>$1</sup>');
+                    return <div key={i} className="text-center my-2 font-serif italic text-lg text-slate-800" dangerouslySetInnerHTML={{__html: math}} />;
+                    } else if (part.startsWith('$') && part.endsWith('$')) {
+                    let math = part.slice(1, -1);
+                    math = math.replace(/_([a-zA-Z0-9]+)/g, '<sub>$1</sub>');
+                    math = math.replace(/\^([a-zA-Z0-9]+)/g, '<sup>$1</sup>');
+                    return <span key={i} className="font-serif italic bg-slate-100 px-1 rounded mx-0.5 text-slate-800" dangerouslySetInnerHTML={{__html: math}} />;
+                    }
+                    return <span key={i}>{part}</span>;
+                })}
+                </React.Fragment>
+            );
+        };
 
-    const handlePointerUp = () => setActivePoint(null);
-
-    const snapToHorizontal = () => {
-        setMode('horizontal');
-        setPointB(prev => ({ ...prev, y: pointA.y }));
-    };
-
-    const snapToVertical = () => {
-        setMode('vertical');
-        setPointB(prev => ({ ...prev, x: pointA.x }));
-    };
-
-    const exploreFreeform = () => setMode('free');
-
-    // --- Quiz Generators and Logic ---
-    const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
-
-    const generateQuiz1Points = () => {
-        if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-        const isHorizontal = Math.random() > 0.5;
-        const x1 = randomInt(-10, 10);
-        const y1 = randomInt(-10, 10);
-        let x2 = x1, y2 = y1;
-        if (isHorizontal) {
-            do { x2 = randomInt(-10, 10); } while (x2 === x1);
-        } else {
-            do { y2 = randomInt(-10, 10); } while (y2 === y1);
-        }
-        setPointA({x: x1, y: y1});
-        setPointB({x: x2, y: y2});
-        setUserAnswer('');
-        setQuizFeedback('');
-        setMode('free');
-    };
-
-    const generateQuiz2Points = () => {
-        if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-        // Use Pythagorean triples so the answer is always a clean integer!
-        const triples = [
-            [3, 4], [4, 3], [6, 8], [8, 6], [5, 12], [12, 5], [9, 12], [12, 9], [8, 15], [15, 8]
-        ];
-        const [dxSet, dySet] = triples[Math.floor(Math.random() * triples.length)];
-        
-        let valid = false;
-        let x1, y1, x2, y2;
-        // Search until we find a pair that fits neatly inside our 10x10 bounds
-        while (!valid) {
-            x1 = randomInt(-10, 10);
-            y1 = randomInt(-10, 10);
-            const signX = Math.random() > 0.5 ? 1 : -1;
-            const signY = Math.random() > 0.5 ? 1 : -1;
-            x2 = x1 + dxSet * signX;
-            y2 = y1 + dySet * signY;
-            if (x2 >= -10 && x2 <= 10 && y2 >= -10 && y2 <= 10) {
-                valid = true;
-            }
-        }
-        setPointA({x: x1, y: y1});
-        setPointB({x: x2, y: y2});
-        setUserAnswer('');
-        setQuizFeedback('');
-        setMode('free');
-    };
-
-    const startNameEntry = (quizMode) => {
-        setTargetQuiz(quizMode);
-        setAppMode('name');
-        setUserName('');
-    };
-
-    const confirmName = (e) => {
-        e.preventDefault();
-        if (!userName.trim()) return;
-        setScore(0);
-        setAttempts(0);
-        setAppMode(targetQuiz);
-        if (targetQuiz === 'quiz1') generateQuiz1Points();
-        else generateQuiz2Points();
-    };
-
-    const checkAnswer = (e) => {
-        e.preventDefault();
-        if (!userAnswer.trim()) return;
-        
-        const currentDx = Math.abs(pointB.x - pointA.x);
-        const currentDy = Math.abs(pointB.y - pointA.y);
-        const expected = appMode === 'quiz1' 
-            ? Math.max(currentDx, currentDy) 
-            : Math.sqrt(currentDx*currentDx + currentDy*currentDy);
-        
-        setAttempts(a => a + 1);
-
-        if (parseFloat(userAnswer) === expected) {
-            setScore(s => s + 1);
-            setQuizFeedback('Correct! Loading next question...');
+        function App() {
+            const [pointA, setPointA] = useState({ x: -5, y: 4 });
+            const [pointB, setPointB] = useState({ x: 4, y: -3 });
+            const [activePoint, setActivePoint] = useState(null);
+            const [mode, setMode] = useState('free'); // 'free', 'horizontal', 'vertical'
             
-            if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-            autoAdvanceTimer.current = setTimeout(() => {
-                if (appMode === 'quiz1') generateQuiz1Points();
+            // New states for Quiz Modes
+            const [appMode, setAppMode] = useState('explore'); // 'explore', 'name', 'quiz1', 'quiz2'
+            const [targetQuiz, setTargetQuiz] = useState('');
+            const [userName, setUserName] = useState('');
+            const [score, setScore] = useState(0);
+            const [attempts, setAttempts] = useState(0);
+            const [userAnswer, setUserAnswer] = useState('');
+            const [quizFeedback, setQuizFeedback] = useState('');
+            
+            const svgRef = useRef(null);
+            const autoAdvanceTimer = useRef(null);
+
+            // Helpers to convert between standard cartesian coords and SVG canvas coords
+            const getSvgX = (x) => SVG_SIZE / 2 + x * SCALE;
+            const getSvgY = (y) => SVG_SIZE / 2 - y * SCALE;
+            const getCartX = (svgX) => Math.round((svgX - SVG_SIZE / 2) / SCALE);
+            const getCartY = (svgY) => Math.round(-(svgY - SVG_SIZE / 2) / SCALE);
+
+            const handlePointerDown = (e, pointName) => {
+                if (appMode !== 'explore') return; // Disable dragging in quiz mode
+                e.stopPropagation();
+                // Capture pointer to allow dragging outside element area
+                e.target.setPointerCapture(e.pointerId);
+                setActivePoint(pointName);
+            };
+
+            const handlePointerMove = (e) => {
+                if (appMode !== 'explore') return; // Disable dragging in quiz mode
+                if (!activePoint || !svgRef.current) return;
+                const rect = svgRef.current.getBoundingClientRect();
+                
+                // Calculate raw SVG coordinates factoring in current scale of the responsive element
+                const scaleX = SVG_SIZE / rect.width;
+                const scaleY = SVG_SIZE / rect.height;
+                
+                const svgX = (e.clientX - rect.left) * scaleX;
+                const svgY = (e.clientY - rect.top) * scaleY;
+                
+                let cartX = getCartX(svgX);
+                let cartY = getCartY(svgY);
+                
+                // Keep the point within the visible grid bounds
+                cartX = Math.max(-GRID_SIZE, Math.min(GRID_SIZE, cartX));
+                cartY = Math.max(-GRID_SIZE, Math.min(GRID_SIZE, cartY));
+
+                // Enforce specific logic based on the selected mode
+                if (mode === 'horizontal') {
+                    if (activePoint === 'A') {
+                        setPointA({ x: cartX, y: cartY });
+                        setPointB(prev => ({ ...prev, y: cartY })); // Force B to align horizontally
+                    } else {
+                        setPointB({ x: cartX, y: cartY });
+                        setPointA(prev => ({ ...prev, y: cartY })); // Force A to align horizontally
+                    }
+                } else if (mode === 'vertical') {
+                    if (activePoint === 'A') {
+                        setPointA({ x: cartX, y: cartY });
+                        setPointB(prev => ({ ...prev, x: cartX })); // Force B to align vertically
+                    } else {
+                        setPointB({ x: cartX, y: cartY });
+                        setPointA(prev => ({ ...prev, x: cartX })); // Force A to align vertically
+                    }
+                } else {
+                    if (activePoint === 'A') setPointA({ x: cartX, y: cartY });
+                    if (activePoint === 'B') setPointB({ x: cartX, y: cartY });
+                }
+            };
+
+            const handlePointerUp = (e) => {
+                if (activePoint) {
+                    e.target.releasePointerCapture(e.pointerId);
+                    setActivePoint(null);
+                }
+            };
+
+            const snapToHorizontal = () => {
+                setMode('horizontal');
+                setPointB(prev => ({ ...prev, y: pointA.y }));
+            };
+
+            const snapToVertical = () => {
+                setMode('vertical');
+                setPointB(prev => ({ ...prev, x: pointA.x }));
+            };
+
+            const exploreFreeform = () => setMode('free');
+
+            // --- Quiz Generators and Logic ---
+            const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+            const generateQuiz1Points = () => {
+                if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                const isHorizontal = Math.random() > 0.5;
+                const x1 = randomInt(-10, 10);
+                const y1 = randomInt(-10, 10);
+                let x2 = x1, y2 = y1;
+                if (isHorizontal) {
+                    do { x2 = randomInt(-10, 10); } while (x2 === x1);
+                } else {
+                    do { y2 = randomInt(-10, 10); } while (y2 === y1);
+                }
+                setPointA({x: x1, y: y1});
+                setPointB({x: x2, y: y2});
+                setUserAnswer('');
+                setQuizFeedback('');
+                setMode('free');
+            };
+
+            const generateQuiz2Points = () => {
+                if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                // Use Pythagorean triples so the answer is always a clean integer!
+                const triples = [
+                    [3, 4], [4, 3], [6, 8], [8, 6], [5, 12], [12, 5], [9, 12], [12, 9], [8, 15], [15, 8]
+                ];
+                const [dxSet, dySet] = triples[Math.floor(Math.random() * triples.length)];
+                
+                let valid = false;
+                let x1, y1, x2, y2;
+                // Search until we find a pair that fits neatly inside our 10x10 bounds
+                while (!valid) {
+                    x1 = randomInt(-10, 10);
+                    y1 = randomInt(-10, 10);
+                    const signX = Math.random() > 0.5 ? 1 : -1;
+                    const signY = Math.random() > 0.5 ? 1 : -1;
+                    x2 = x1 + dxSet * signX;
+                    y2 = y1 + dySet * signY;
+                    if (x2 >= -10 && x2 <= 10 && y2 >= -10 && y2 <= 10) {
+                        valid = true;
+                    }
+                }
+                setPointA({x: x1, y: y1});
+                setPointB({x: x2, y: y2});
+                setUserAnswer('');
+                setQuizFeedback('');
+                setMode('free');
+            };
+
+            const startNameEntry = (quizMode) => {
+                setTargetQuiz(quizMode);
+                setAppMode('name');
+                setUserName('');
+            };
+
+            const confirmName = (e) => {
+                e.preventDefault();
+                if (!userName.trim()) return;
+                setScore(0);
+                setAttempts(0);
+                setAppMode(targetQuiz);
+                if (targetQuiz === 'quiz1') generateQuiz1Points();
                 else generateQuiz2Points();
-            }, 3000);
-        } else {
-            setQuizFeedback(`Incorrect. The correct distance was ${expected}.`);
-            if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-        }
-    };
+            };
 
-    const exitMode = () => {
-        if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-        setAppMode('explore');
-        setUserName('');
-        setScore(0);
-        setAttempts(0);
-        setUserAnswer('');
-        setQuizFeedback('');
-    };
-    // --- End Quiz Logic ---
+            const checkAnswer = (e) => {
+                e.preventDefault();
+                if (!userAnswer.trim()) return;
+                
+                const currentDx = Math.abs(pointB.x - pointA.x);
+                const currentDy = Math.abs(pointB.y - pointA.y);
+                const expected = appMode === 'quiz1' 
+                    ? Math.max(currentDx, currentDy) 
+                    : Math.sqrt(currentDx*currentDx + currentDy*currentDy);
+                
+                setAttempts(a => a + 1);
 
-    const formatDistanceCalc = (val1, val2) => {
-        const larger = Math.max(val1, val2);
-        const smaller = Math.min(val1, val2);
-        const smallerStr = smaller < 0 ? `(${smaller})` : `${smaller}`;
-        return `${larger} - ${smallerStr} = ${larger - smaller}`;
-    };
+                if (parseFloat(userAnswer) === expected) {
+                    setScore(s => s + 1);
+                    setQuizFeedback('Correct! Loading next question...');
+                    
+                    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                    autoAdvanceTimer.current = setTimeout(() => {
+                        if (appMode === 'quiz1') generateQuiz1Points();
+                        else generateQuiz2Points();
+                    }, 3000);
+                } else {
+                    setQuizFeedback(`Incorrect. The correct distance was ${expected}.`);
+                    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                }
+            };
 
-    const dx = Math.abs(pointB.x - pointA.x);
-    const dy = Math.abs(pointB.y - pointA.y);
-    const textShadow = '2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 0px 2px 0 #fff, 0px -2px 0 #fff, 2px 0px 0 #fff, -2px 0px 0 #fff';
+            const exitMode = () => {
+                if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                setAppMode('explore');
+                setUserName('');
+                setScore(0);
+                setAttempts(0);
+                setUserAnswer('');
+                setQuizFeedback('');
+            };
+            // --- End Quiz Logic ---
 
-    // Determines if the distance numbers show on the graph (hides during a quiz)
-    const showMeasurements = appMode === 'explore' || quizFeedback !== '';
+            const formatDistanceCalc = (val1, val2) => {
+                const larger = Math.max(val1, val2);
+                const smaller = Math.min(val1, val2);
+                const smallerStr = smaller < 0 ? `(${smaller})` : `${smaller}`;
+                return `${larger} - ${smallerStr} = ${larger - smaller}`;
+            };
 
-    return (
-        <div 
-            className="min-h-screen bg-slate-100 p-4 md:p-8 flex flex-col items-center font-sans"
-            onPointerUp={handlePointerUp}
-            onPointerMove={handlePointerMove}
-            onPointerLeave={handlePointerUp}
-        >
-            <div className="max-w-6xl w-full">
-                <header className="mb-6">
-                    <h1 className="text-3xl font-bold text-slate-800">Coordinate Distance Animation</h1>
-                    <p className="text-slate-600 mt-2">Interactive exploration of horizontal, vertical, and diagonal distance.</p>
-                </header>
+            const dx = Math.abs(pointB.x - pointA.x);
+            const dy = Math.abs(pointB.y - pointA.y);
+            const textShadow = '2px 2px 0 #fff, -2px -2px 0 #fff, 2px -2px 0 #fff, -2px 2px 0 #fff, 0px 2px 0 #fff, 0px -2px 0 #fff, 2px 0px 0 #fff, -2px 0px 0 #fff';
 
-                <div className="flex flex-col lg:flex-row gap-8">
-                    {/* Left Panel: Interactive Cartesian Graph */}
-                    <div className="flex-1 w-full max-w-2xl mx-auto">
-                        <svg 
-                            ref={svgRef}
-                            viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`}
-                            className="w-full h-auto touch-none bg-white rounded-xl shadow-md border border-slate-300"
-                        >
-                            {/* Grid Lines */}
-                            {Array.from({ length: GRID_SIZE * 2 + 1 }).map((_, i) => {
-                                const pos = i * SCALE;
-                                return (
-                                    <g key={`grid-${i}`}>
-                                        <line x1={pos} y1={0} x2={pos} y2={SVG_SIZE} stroke="#f1f5f9" strokeWidth="1.5" />
-                                        <line x1={0} y1={pos} x2={SVG_SIZE} y2={pos} stroke="#f1f5f9" strokeWidth="1.5" />
-                                    </g>
-                                )
-                            })}
+            // Determines if the distance numbers show on the graph (hides during a quiz)
+            const showMeasurements = appMode === 'explore' || quizFeedback !== '';
 
-                            {/* Main Axes */}
-                            <line x1={0} y1={SVG_SIZE/2} x2={SVG_SIZE} y2={SVG_SIZE/2} stroke="#94a3b8" strokeWidth="2.5" />
-                            <line x1={SVG_SIZE/2} y1={0} x2={SVG_SIZE/2} y2={SVG_SIZE} stroke="#94a3b8" strokeWidth="2.5" />
+            return (
+                <div 
+                    className="min-h-screen bg-slate-100 p-4 md:p-8 flex flex-col items-center font-sans"
+                >
+                    <div className="max-w-6xl w-full">
+                        <header className="mb-6">
+                            <h1 className="text-3xl font-bold text-slate-800">Coordinate Distance Animation</h1>
+                            <p className="text-slate-600 mt-2">Interactive exploration of horizontal, vertical, and diagonal distance.</p>
+                        </header>
 
-                            {/* Axis Labels */}
-                            {[-10, -5, 5, 10].map(val => (
-                                <g key={`label-${val}`}>
-                                    <text x={getSvgX(val)} y={getSvgY(0) + 16} textAnchor="middle" fontSize="12" fill="#64748b" style={{textShadow}}>
-                                        {val}
-                                    </text>
-                                    <text x={getSvgX(0) - 16} y={getSvgY(val) + 4} textAnchor="middle" fontSize="12" fill="#64748b" style={{textShadow}}>
-                                        {val}
-                                    </text>
-                                </g>
-                            ))}
-                            <text x={getSvgX(0) - 12} y={getSvgY(0) + 16} textAnchor="middle" fontSize="12" fill="#64748b" style={{textShadow}}>0</text>
-                            
-                            {/* Horizontal Leg Visualization */}
-                            {(mode === 'free' || mode === 'horizontal') && dx > 0 && (
-                                <line 
-                                    x1={getSvgX(pointA.x)} y1={getSvgY(pointA.y)} 
-                                    x2={getSvgX(pointB.x)} y2={getSvgY(pointA.y)} 
-                                    stroke="#10b981" strokeWidth="4" strokeDasharray="6 6"
-                                    className="transition-all duration-300"
-                                />
-                            )}
-                            
-                            {/* Vertical Leg Visualization */}
-                            {(mode === 'free' || mode === 'vertical') && dy > 0 && (
-                                <line 
-                                    x1={getSvgX(pointB.x)} y1={getSvgY(pointA.y)} 
-                                    x2={getSvgX(pointB.x)} y2={getSvgY(pointB.y)} 
-                                    stroke="#8b5cf6" strokeWidth="4" strokeDasharray="6 6"
-                                    className="transition-all duration-300"
-                                />
-                            )}
-                            
-                            {/* Diagonal / Hypotenuse Visualization */}
-                            {mode === 'free' && dx > 0 && dy > 0 && appMode !== 'quiz1' && (
-                                <line 
-                                    x1={getSvgX(pointA.x)} y1={getSvgY(pointA.y)} 
-                                    x2={getSvgX(pointB.x)} y2={getSvgY(pointB.y)} 
-                                    stroke="#cbd5e1" strokeWidth="3" strokeDasharray="4 4"
-                                />
-                            )}
-
-                            {/* Dynamic Distance Measurements */}
-                            {showMeasurements && (mode === 'free' || mode === 'horizontal') && dx > 0 && (
-                                <text 
-                                    x={getSvgX((pointA.x + pointB.x) / 2)} 
-                                    y={getSvgY(pointA.y) + (pointA.y < 0 ? 22 : -10)}
-                                    textAnchor="middle" 
-                                    className="fill-emerald-700 font-bold text-lg select-none pointer-events-none"
-                                    style={{ textShadow }}
+                        <div className="flex flex-col lg:flex-row gap-8">
+                            {/* Left Panel: Interactive Cartesian Graph */}
+                            <div className="flex-1 w-full max-w-2xl mx-auto">
+                                <svg 
+                                    ref={svgRef}
+                                    viewBox={`0 0 ${SVG_SIZE} ${SVG_SIZE}`}
+                                    className="w-full h-auto touch-none bg-white rounded-xl shadow-md border border-slate-300"
                                 >
-                                    {dx}
-                                </text>
-                            )}
-                            {showMeasurements && (mode === 'free' || mode === 'vertical') && dy > 0 && (
-                                <text 
-                                    x={getSvgX(pointB.x) + (pointB.x < 0 ? 15 : -15)} 
-                                    y={getSvgY((pointA.y + pointB.y) / 2)} 
-                                    textAnchor="middle" 
-                                    alignmentBaseline="middle"
-                                    className="fill-violet-700 font-bold text-lg select-none pointer-events-none"
-                                    style={{ textShadow }}
-                                >
-                                    {dy}
-                                </text>
-                            )}
+                                    {/* Grid Lines */}
+                                    {Array.from({ length: GRID_SIZE * 2 + 1 }).map((_, i) => {
+                                        const pos = i * SCALE;
+                                        return (
+                                            <g key={`grid-${i}`}>
+                                                <line x1={pos} y1={0} x2={pos} y2={SVG_SIZE} stroke="#f1f5f9" strokeWidth="1.5" />
+                                                <line x1={0} y1={pos} x2={SVG_SIZE} y2={pos} stroke="#f1f5f9" strokeWidth="1.5" />
+                                            </g>
+                                        )
+                                    })}
 
-                            {/* Corner Vertex for the Right Triangle */}
-                            {mode === 'free' && dx > 0 && dy > 0 && (
-                                <circle cx={getSvgX(pointB.x)} cy={getSvgY(pointA.y)} r={4} fill="#64748b" />
-                            )}
+                                    {/* Main Axes */}
+                                    <line x1={0} y1={SVG_SIZE/2} x2={SVG_SIZE} y2={SVG_SIZE/2} stroke="#94a3b8" strokeWidth="2.5" />
+                                    <line x1={SVG_SIZE/2} y1={0} x2={SVG_SIZE/2} y2={SVG_SIZE} stroke="#94a3b8" strokeWidth="2.5" />
 
-                            {/* Interactive Point A (Blue) */}
-                            <g onPointerDown={(e) => handlePointerDown(e, 'A')} className={`${appMode === 'explore' ? 'cursor-grab' : ''} ${activePoint === 'A' ? 'cursor-grabbing' : ''}`}>
-                                <circle cx={getSvgX(pointA.x)} cy={getSvgY(pointA.y)} r={24} fill="transparent" />
-                                <circle cx={getSvgX(pointA.x)} cy={getSvgY(pointA.y)} r={10} className={`transition-colors ${activePoint === 'A' ? 'fill-blue-600' : 'fill-blue-500'}`} />
-                                <text x={getSvgX(pointA.x)} y={getSvgY(pointA.y) - 18} textAnchor="middle" className="text-sm font-bold fill-blue-800 pointer-events-none select-none" style={{textShadow}}>
-                                    A({pointA.x}, {pointA.y})
-                                </text>
-                            </g>
-
-                            {/* Interactive Point B (Red) */}
-                            <g onPointerDown={(e) => handlePointerDown(e, 'B')} className={`${appMode === 'explore' ? 'cursor-grab' : ''} ${activePoint === 'B' ? 'cursor-grabbing' : ''}`}>
-                                <circle cx={getSvgX(pointB.x)} cy={getSvgY(pointB.y)} r={24} fill="transparent" />
-                                <circle cx={getSvgX(pointB.x)} cy={getSvgY(pointB.y)} r={10} className={`transition-colors ${activePoint === 'B' ? 'fill-red-600' : 'fill-red-500'}`} />
-                                <text x={getSvgX(pointB.x)} y={getSvgY(pointB.y) - 18} textAnchor="middle" className="text-sm font-bold fill-red-800 pointer-events-none select-none" style={{textShadow}}>
-                                    B({pointB.x}, {pointB.y})
-                                </text>
-                            </g>
-                        </svg>
-                    </div>
-
-                    {/* Right Panel: Live Mathematical Explanations or Quizzes */}
-                    <div className="flex-1 flex flex-col gap-6">
-                        
-                        {appMode === 'explore' && (
-                            <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-                                <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
-                                    <Info className="w-6 h-6 text-blue-500" />
-                                    Understanding Distance
-                                </h2>
-                                <p className="text-slate-600 mb-6 leading-relaxed">
-                                    <MathText>
-                                        Move Points $A(x_1, y_1)$ and $B(x_2, y_2)$ on the grid. 
-                                        Distance is always a positive length, so we calculate it by subtracting the smaller coordinate from the larger coordinate.
-                                    </MathText>
-                                </p>
-
-                                {/* Mode Switching Buttons */}
-                                <div className="flex flex-wrap gap-3 mb-8">
-                                    <button 
-                                        onClick={exploreFreeform} 
-                                        className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${mode === 'free' ? 'bg-slate-800 text-white scale-105' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'}`}
-                                    >
-                                        <Navigation className="w-4 h-4" /> Free Move
-                                    </button>
-                                    <button 
-                                        onClick={snapToHorizontal} 
-                                        className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${mode === 'horizontal' ? 'bg-emerald-600 text-white scale-105' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100'}`}
-                                    >
-                                        <MoveHorizontal className="w-4 h-4" /> Lock Horizontal
-                                    </button>
-                                    <button 
-                                        onClick={snapToVertical} 
-                                        className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${mode === 'vertical' ? 'bg-violet-600 text-white scale-105' : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-100'}`}
-                                    >
-                                        <MoveVertical className="w-4 h-4" /> Lock Vertical
-                                    </button>
-                                </div>
-
-                                <div className="space-y-5">
-                                    {/* Horizontal Math Box */}
-                                    <div className={`p-5 rounded-xl border-2 transition-all duration-300 ${mode === 'vertical' ? 'opacity-40 grayscale border-slate-100 bg-slate-50' : 'border-emerald-200 bg-emerald-50/50'}`}>
-                                        <h3 className="font-bold text-emerald-800 text-lg mb-2">
-                                            <MathText>Horizontal Distance ($d_x$)</MathText>
-                                        </h3>
-                                        <p className="text-sm text-emerald-900 mb-4 leading-relaxed">
-                                            <MathText>The distance purely along the x-axis. Because we only care about left/right changes, the $y$-coordinates are ignored.</MathText>
-                                        </p>
-                                        <div className="bg-white p-4 rounded-lg shadow-sm font-mono text-sm space-y-2 border border-emerald-100">
-                                            <div><MathText>Formula: $d_x$ = larger $x$ - smaller $x$</MathText></div>
-                                            <div className="text-emerald-700 font-bold text-base"><MathText>{`Calculation: $${formatDistanceCalc(pointA.x, pointB.x)}$ units`}</MathText></div>
-                                        </div>
-                                    </div>
-
-                                    {/* Vertical Math Box */}
-                                    <div className={`p-5 rounded-xl border-2 transition-all duration-300 ${mode === 'horizontal' ? 'opacity-40 grayscale border-slate-100 bg-slate-50' : 'border-violet-200 bg-violet-50/50'}`}>
-                                        <h3 className="font-bold text-violet-800 text-lg mb-2">
-                                            <MathText>Vertical Distance ($d_y$)</MathText>
-                                        </h3>
-                                        <p className="text-sm text-violet-900 mb-4 leading-relaxed">
-                                            <MathText>The distance purely along the y-axis. Because we only care about up/down changes, the $x$-coordinates are ignored.</MathText>
-                                        </p>
-                                        <div className="bg-white p-4 rounded-lg shadow-sm font-mono text-sm space-y-2 border border-violet-100">
-                                            <div><MathText>Formula: $d_y$ = larger $y$ - smaller $y$</MathText></div>
-                                            <div className="text-violet-700 font-bold text-base"><MathText>{`Calculation: $${formatDistanceCalc(pointA.y, pointB.y)}$ units`}</MathText></div>
-                                        </div>
-                                    </div>
+                                    {/* Axis Labels */}
+                                    {[-10, -5, 5, 10].map(val => (
+                                        <g key={`label-${val}`}>
+                                            <text x={getSvgX(val)} y={getSvgY(0) + 16} textAnchor="middle" fontSize="12" fill="#64748b" style={{textShadow}}>
+                                                {val}
+                                            </text>
+                                            <text x={getSvgX(0) - 16} y={getSvgY(val) + 4} textAnchor="middle" fontSize="12" fill="#64748b" style={{textShadow}}>
+                                                {val}
+                                            </text>
+                                        </g>
+                                    ))}
+                                    <text x={getSvgX(0) - 12} y={getSvgY(0) + 16} textAnchor="middle" fontSize="12" fill="#64748b" style={{textShadow}}>0</text>
                                     
-                                    {/* Total Distance / Pythagorean Context */}
-                                    {mode === 'free' && (
-                                        <div className="p-5 rounded-xl border-2 border-slate-200 bg-slate-50 animate-in fade-in zoom-in duration-300">
-                                            <h3 className="font-bold text-slate-800 text-lg mb-2">Diagonal Distance</h3>
-                                            <p className="text-sm text-slate-600 mb-4 leading-relaxed">
-                                                <MathText>The horizontal and vertical distances form a right triangle. We can find the direct distance ($d$) using the Pythagorean theorem: $a^2 + b^2 = c^2$.</MathText>
-                                            </p>
-                                            <div className="bg-white p-4 rounded-lg shadow-sm font-mono text-sm border border-slate-200 space-y-2">
-                                                <div><MathText>{`$d^2 = (${dx})^2 + (${dy})^2 = ${dx*dx + dy*dy}$`}</MathText></div>
-                                                <div className="text-slate-800 font-bold text-base"><MathText>{`Distance $d ≈ ${(Math.sqrt(dx*dx + dy*dy)).toFixed(2)}$ units`}</MathText></div>
+                                    {/* Horizontal Leg Visualization */}
+                                    {(mode === 'free' || mode === 'horizontal') && dx > 0 && (
+                                        <line 
+                                            x1={getSvgX(pointA.x)} y1={getSvgY(pointA.y)} 
+                                            x2={getSvgX(pointB.x)} y2={getSvgY(pointA.y)} 
+                                            stroke="#10b981" strokeWidth="4" strokeDasharray="6 6"
+                                            className="transition-all duration-300"
+                                        />
+                                    )}
+                                    
+                                    {/* Vertical Leg Visualization */}
+                                    {(mode === 'free' || mode === 'vertical') && dy > 0 && (
+                                        <line 
+                                            x1={getSvgX(pointB.x)} y1={getSvgY(pointA.y)} 
+                                            x2={getSvgX(pointB.x)} y2={getSvgY(pointB.y)} 
+                                            stroke="#8b5cf6" strokeWidth="4" strokeDasharray="6 6"
+                                            className="transition-all duration-300"
+                                        />
+                                    )}
+                                    
+                                    {/* Diagonal / Hypotenuse Visualization */}
+                                    {mode === 'free' && dx > 0 && dy > 0 && appMode !== 'quiz1' && (
+                                        <line 
+                                            x1={getSvgX(pointA.x)} y1={getSvgY(pointA.y)} 
+                                            x2={getSvgX(pointB.x)} y2={getSvgY(pointB.y)} 
+                                            stroke="#cbd5e1" strokeWidth="3" strokeDasharray="4 4"
+                                        />
+                                    )}
+
+                                    {/* Dynamic Distance Measurements */}
+                                    {showMeasurements && (mode === 'free' || mode === 'horizontal') && dx > 0 && (
+                                        <text 
+                                            x={getSvgX((pointA.x + pointB.x) / 2)} 
+                                            y={getSvgY(pointA.y) + (pointA.y < 0 ? 22 : -10)}
+                                            textAnchor="middle" 
+                                            className="fill-emerald-700 font-bold text-lg select-none pointer-events-none"
+                                            style={{ textShadow }}
+                                        >
+                                            {dx}
+                                        </text>
+                                    )}
+                                    {showMeasurements && (mode === 'free' || mode === 'vertical') && dy > 0 && (
+                                        <text 
+                                            x={getSvgX(pointB.x) + (pointB.x < 0 ? 15 : -15)} 
+                                            y={getSvgY((pointA.y + pointB.y) / 2)} 
+                                            textAnchor="middle" 
+                                            alignmentBaseline="middle"
+                                            className="fill-violet-700 font-bold text-lg select-none pointer-events-none"
+                                            style={{ textShadow }}
+                                        >
+                                            {dy}
+                                        </text>
+                                    )}
+
+                                    {/* Corner Vertex for the Right Triangle */}
+                                    {mode === 'free' && dx > 0 && dy > 0 && (
+                                        <circle cx={getSvgX(pointB.x)} cy={getSvgY(pointA.y)} r={4} fill="#64748b" />
+                                    )}
+
+                                    {/* Interactive Point A (Blue) */}
+                                    <g 
+                                        onPointerDown={(e) => handlePointerDown(e, 'A')} 
+                                        onPointerMove={handlePointerMove}
+                                        onPointerUp={handlePointerUp}
+                                        className={`${appMode === 'explore' ? 'cursor-grab' : ''} ${activePoint === 'A' ? 'cursor-grabbing' : ''}`}
+                                    >
+                                        <circle cx={getSvgX(pointA.x)} cy={getSvgY(pointA.y)} r={24} fill="transparent" />
+                                        <circle cx={getSvgX(pointA.x)} cy={getSvgY(pointA.y)} r={10} className={`transition-colors ${activePoint === 'A' ? 'fill-blue-600' : 'fill-blue-500'}`} />
+                                        <text x={getSvgX(pointA.x)} y={getSvgY(pointA.y) - 18} textAnchor="middle" className="text-sm font-bold fill-blue-800 pointer-events-none select-none" style={{textShadow}}>
+                                            A({pointA.x}, {pointA.y})
+                                        </text>
+                                    </g>
+
+                                    {/* Interactive Point B (Red) */}
+                                    <g 
+                                        onPointerDown={(e) => handlePointerDown(e, 'B')} 
+                                        onPointerMove={handlePointerMove}
+                                        onPointerUp={handlePointerUp}
+                                        className={`${appMode === 'explore' ? 'cursor-grab' : ''} ${activePoint === 'B' ? 'cursor-grabbing' : ''}`}
+                                    >
+                                        <circle cx={getSvgX(pointB.x)} cy={getSvgY(pointB.y)} r={24} fill="transparent" />
+                                        <circle cx={getSvgX(pointB.x)} cy={getSvgY(pointB.y)} r={10} className={`transition-colors ${activePoint === 'B' ? 'fill-red-600' : 'fill-red-500'}`} />
+                                        <text x={getSvgX(pointB.x)} y={getSvgY(pointB.y) - 18} textAnchor="middle" className="text-sm font-bold fill-red-800 pointer-events-none select-none" style={{textShadow}}>
+                                            B({pointB.x}, {pointB.y})
+                                        </text>
+                                    </g>
+                                </svg>
+                            </div>
+
+                            {/* Right Panel: Live Mathematical Explanations or Quizzes */}
+                            <div className="flex-1 flex flex-col gap-6">
+                                
+                                {appMode === 'explore' && (
+                                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                                        <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
+                                            <Info className="w-6 h-6 text-blue-500" />
+                                            Understanding Distance
+                                        </h2>
+                                        <p className="text-slate-600 mb-6 leading-relaxed">
+                                            <MathText>
+                                                Move Points $A(x_1, y_1)$ and $B(x_2, y_2)$ on the grid. 
+                                                Distance is always a positive length, so we calculate it by subtracting the smaller coordinate from the larger coordinate.
+                                            </MathText>
+                                        </p>
+
+                                        {/* Mode Switching Buttons */}
+                                        <div className="flex flex-wrap gap-3 mb-8">
+                                            <button 
+                                                onClick={exploreFreeform} 
+                                                className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${mode === 'free' ? 'bg-slate-800 text-white scale-105' : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border border-slate-200'}`}
+                                            >
+                                                <Navigation className="w-4 h-4" /> Free Move
+                                            </button>
+                                            <button 
+                                                onClick={snapToHorizontal} 
+                                                className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${mode === 'horizontal' ? 'bg-emerald-600 text-white scale-105' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100'}`}
+                                            >
+                                                <MoveHorizontal className="w-4 h-4" /> Lock Horizontal
+                                            </button>
+                                            <button 
+                                                onClick={snapToVertical} 
+                                                className={`px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-all shadow-sm ${mode === 'vertical' ? 'bg-violet-600 text-white scale-105' : 'bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-100'}`}
+                                            >
+                                                <MoveVertical className="w-4 h-4" /> Lock Vertical
+                                            </button>
+                                        </div>
+
+                                        <div className="space-y-5">
+                                            {/* Horizontal Math Box */}
+                                            <div className={`p-5 rounded-xl border-2 transition-all duration-300 ${mode === 'vertical' ? 'opacity-40 grayscale border-slate-100 bg-slate-50' : 'border-emerald-200 bg-emerald-50/50'}`}>
+                                                <h3 className="font-bold text-emerald-800 text-lg mb-2">
+                                                    <MathText>Horizontal Distance ($d_x$)</MathText>
+                                                </h3>
+                                                <p className="text-sm text-emerald-900 mb-4 leading-relaxed">
+                                                    <MathText>The distance purely along the x-axis. Because we only care about left/right changes, the $y$-coordinates are ignored.</MathText>
+                                                </p>
+                                                <div className="bg-white p-4 rounded-lg shadow-sm font-mono text-sm space-y-2 border border-emerald-100">
+                                                    <div><MathText>Formula: $d_x$ = larger $x$ - smaller $x$</MathText></div>
+                                                    <div className="text-emerald-700 font-bold text-base"><MathText>{`Calculation: $${formatDistanceCalc(pointA.x, pointB.x)}$ units`}</MathText></div>
+                                                </div>
+                                            </div>
+
+                                            {/* Vertical Math Box */}
+                                            <div className={`p-5 rounded-xl border-2 transition-all duration-300 ${mode === 'horizontal' ? 'opacity-40 grayscale border-slate-100 bg-slate-50' : 'border-violet-200 bg-violet-50/50'}`}>
+                                                <h3 className="font-bold text-violet-800 text-lg mb-2">
+                                                    <MathText>Vertical Distance ($d_y$)</MathText>
+                                                </h3>
+                                                <p className="text-sm text-violet-900 mb-4 leading-relaxed">
+                                                    <MathText>The distance purely along the y-axis. Because we only care about up/down changes, the $x$-coordinates are ignored.</MathText>
+                                                </p>
+                                                <div className="bg-white p-4 rounded-lg shadow-sm font-mono text-sm space-y-2 border border-violet-100">
+                                                    <div><MathText>Formula: $d_y$ = larger $y$ - smaller $y$</MathText></div>
+                                                    <div className="text-violet-700 font-bold text-base"><MathText>{`Calculation: $${formatDistanceCalc(pointA.y, pointB.y)}$ units`}</MathText></div>
+                                                </div>
+                                            </div>
+                                            
+                                            {/* Total Distance / Pythagorean Context */}
+                                            {mode === 'free' && (
+                                                <div className="p-5 rounded-xl border-2 border-slate-200 bg-slate-50 transition-all duration-300">
+                                                    <h3 className="font-bold text-slate-800 text-lg mb-2">Diagonal Distance</h3>
+                                                    <p className="text-sm text-slate-600 mb-4 leading-relaxed">
+                                                        <MathText>The horizontal and vertical distances form a right triangle. We can find the direct distance ($d$) using the Pythagorean theorem: $a^2 + b^2 = c^2$.</MathText>
+                                                    </p>
+                                                    <div className="bg-white p-4 rounded-lg shadow-sm font-mono text-sm border border-slate-200 space-y-2">
+                                                        <div><MathText>{`$d^2 = (${dx})^2 + (${dy})^2 = ${dx*dx + dy*dy}$`}</MathText></div>
+                                                        <div className="text-slate-800 font-bold text-base"><MathText>{`Distance $d ≈ ${(Math.sqrt(dx*dx + dy*dy)).toFixed(2)}$ units`}</MathText></div>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
+                                        
+                                        {/* Quiz Section Trigger */}
+                                        <div className="mt-8 pt-6 border-t border-slate-200">
+                                            <h3 className="font-bold text-slate-800 mb-4">Test Your Knowledge</h3>
+                                            <div className="flex flex-col sm:flex-row gap-3">
+                                                <button onClick={() => startNameEntry('quiz1')} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-lg font-medium flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                    <Play className="w-4 h-4" /> Quiz 1 (1D Distances)
+                                                </button>
+                                                <button onClick={() => startNameEntry('quiz2')} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2.5 rounded-lg font-medium flex justify-center items-center gap-2 shadow-sm transition-colors">
+                                                    <Play className="w-4 h-4" /> Quiz 2 (2D Distances)
+                                                </button>
                                             </div>
                                         </div>
-                                    )}
-                                </div>
-                                
-                                {/* Quiz Section Trigger */}
-                                <div className="mt-8 pt-6 border-t border-slate-200">
-                                    <h3 className="font-bold text-slate-800 mb-4">Test Your Knowledge</h3>
-                                    <div className="flex flex-col sm:flex-row gap-3">
-                                        <button onClick={() => startNameEntry('quiz1')} className="flex-1 bg-amber-500 hover:bg-amber-600 text-white py-2.5 rounded-lg font-medium flex justify-center items-center gap-2 shadow-sm transition-colors">
-                                            <Play className="w-4 h-4" /> Quiz 1 (1D Distances)
-                                        </button>
-                                        <button onClick={() => startNameEntry('quiz2')} className="flex-1 bg-rose-500 hover:bg-rose-600 text-white py-2.5 rounded-lg font-medium flex justify-center items-center gap-2 shadow-sm transition-colors">
-                                            <Play className="w-4 h-4" /> Quiz 2 (2D Distances)
-                                        </button>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-
-                        {appMode === 'name' && (
-                            <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200">
-                                <h2 className="text-2xl font-bold mb-2 text-slate-800 flex items-center gap-2">
-                                    <User className="w-6 h-6 text-blue-500" />
-                                    Enter Your Name
-                                </h2>
-                                <p className="text-slate-600 mb-6">Before we begin the quiz, what should we call you?</p>
-                                
-                                <form onSubmit={confirmName} className="space-y-4">
-                                    <input 
-                                        type="text" 
-                                        autoFocus
-                                        value={userName} 
-                                        onChange={e => setUserName(e.target.value)} 
-                                        className="w-full border-2 border-slate-200 p-3 rounded-lg focus:border-blue-500 outline-none text-lg"
-                                        placeholder="Your name..."
-                                        maxLength={20}
-                                        required
-                                    />
-                                    <div className="flex gap-3">
-                                        <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold text-lg transition-colors">
-                                            Start Quiz
-                                        </button>
-                                        <button type="button" onClick={exitMode} className="px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors">
-                                            Cancel
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        )}
-
-                        {(appMode === 'quiz1' || appMode === 'quiz2') && (
-                            <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
-                                <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
-                                    <h2 className="text-xl font-bold text-slate-800">
-                                        {appMode === 'quiz1' ? 'Quiz 1: Horizontal & Vertical' : 'Quiz 2: Diagonal Distance'}
-                                    </h2>
-                                    <div className="text-right bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">
-                                        <div className="font-bold text-blue-800 text-sm uppercase tracking-wide">{userName}</div>
-                                        <div className="text-blue-600 font-mono font-bold">Score: {score} / {attempts}</div>
-                                    </div>
-                                </div>
-
-                                <div className="mb-6">
-                                    <p className="text-lg text-slate-700 mb-3">
-                                        What is the distance between:
-                                    </p>
-                                    <div className="pl-4 border-l-4 border-slate-200 space-y-2 mb-4 bg-slate-50 p-3 rounded-r-lg">
-                                        <div className="text-lg">Point <strong className="text-blue-700">A({pointA.x}, {pointA.y})</strong></div>
-                                        <div className="text-lg">Point <strong className="text-red-700">B({pointB.x}, {pointB.y})</strong></div>
-                                    </div>
-                                    <p className="text-sm text-slate-500 italic">
-                                        Enter the distance numerically below.
-                                    </p>
-                                </div>
-
-                                <form onSubmit={checkAnswer} className="flex gap-3 mb-6">
-                                    <input 
-                                        type="number"
-                                        step="any"
-                                        value={userAnswer}
-                                        onChange={e => setUserAnswer(e.target.value)}
-                                        disabled={!!quizFeedback}
-                                        className="border-2 border-slate-200 rounded-lg p-3 w-32 md:w-48 focus:border-blue-500 outline-none text-lg font-mono"
-                                        placeholder="Distance"
-                                        required
-                                    />
-                                    {!quizFeedback ? (
-                                        <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
-                                            Submit
-                                        </button>
-                                    ) : (
-                                        <button 
-                                            type="button" 
-                                            onClick={appMode === 'quiz1' ? generateQuiz1Points : generateQuiz2Points} 
-                                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold transition-colors"
-                                        >
-                                            Next Question
-                                        </button>
-                                    )}
-                                </form>
-
-                                {quizFeedback && (
-                                    <div className={`p-4 rounded-lg mb-8 flex items-center gap-3 ${quizFeedback.includes('Correct') ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
-                                        {quizFeedback.includes('Correct') ? <CheckCircle className="w-6 h-6" /> : <XCircle className="w-6 h-6 text-red-500" />}
-                                        <span className="font-medium text-lg">{quizFeedback}</span>
                                     </div>
                                 )}
 
-                                <button onClick={exitMode} className="text-slate-500 hover:text-slate-800 font-medium underline">
-                                    Quit to Menu
-                                </button>
-                            </div>
-                        )}
+                                {appMode === 'name' && (
+                                    <div className="bg-white p-8 rounded-xl shadow-md border border-slate-200">
+                                        <h2 className="text-2xl font-bold mb-2 text-slate-800 flex items-center gap-2">
+                                            <User className="w-6 h-6 text-blue-500" />
+                                            Enter Your Name
+                                        </h2>
+                                        <p className="text-slate-600 mb-6">Before we begin the quiz, what should we call you?</p>
+                                        
+                                        <form onSubmit={confirmName} className="space-y-4">
+                                            <input 
+                                                type="text" 
+                                                autoFocus
+                                                value={userName} 
+                                                onChange={e => setUserName(e.target.value)} 
+                                                className="w-full border-2 border-slate-200 p-3 rounded-lg focus:border-blue-500 outline-none text-lg"
+                                                placeholder="Your name..."
+                                                maxLength={20}
+                                                required
+                                            />
+                                            <div className="flex gap-3">
+                                                <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-bold text-lg transition-colors">
+                                                    Start Quiz
+                                                </button>
+                                                <button type="button" onClick={exitMode} className="px-6 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg font-medium transition-colors">
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                )}
 
+                                {(appMode === 'quiz1' || appMode === 'quiz2') && (
+                                    <div className="bg-white p-6 rounded-xl shadow-md border border-slate-200">
+                                        <div className="flex justify-between items-center mb-6 pb-4 border-b border-slate-100">
+                                            <h2 className="text-xl font-bold text-slate-800">
+                                                {appMode === 'quiz1' ? 'Quiz 1: Horizontal & Vertical' : 'Quiz 2: Diagonal Distance'}
+                                            </h2>
+                                            <div className="text-right bg-blue-50 px-4 py-2 rounded-lg border border-blue-100">
+                                                <div className="font-bold text-blue-800 text-sm uppercase tracking-wide">{userName}</div>
+                                                <div className="text-blue-600 font-mono font-bold">Score: {score} / {attempts}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="mb-6">
+                                            <p className="text-lg text-slate-700 mb-3">
+                                                What is the distance between:
+                                            </p>
+                                            <div className="pl-4 border-l-4 border-slate-200 space-y-2 mb-4 bg-slate-50 p-3 rounded-r-lg">
+                                                <div className="text-lg">Point <strong className="text-blue-700">A({pointA.x}, {pointA.y})</strong></div>
+                                                <div className="text-lg">Point <strong className="text-red-700">B({pointB.x}, {pointB.y})</strong></div>
+                                            </div>
+                                            <p className="text-sm text-slate-500 italic">
+                                                Enter the distance numerically below.
+                                            </p>
+                                        </div>
+
+                                        <form onSubmit={checkAnswer} className="flex gap-3 mb-6">
+                                            <input 
+                                                type="number"
+                                                step="any"
+                                                value={userAnswer}
+                                                onChange={e => setUserAnswer(e.target.value)}
+                                                disabled={!!quizFeedback}
+                                                className="border-2 border-slate-200 rounded-lg p-3 w-32 md:w-48 focus:border-blue-500 outline-none text-lg font-mono"
+                                                placeholder="Distance"
+                                                required
+                                            />
+                                            {!quizFeedback ? (
+                                                <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-bold transition-colors">
+                                                    Submit
+                                                </button>
+                                            ) : (
+                                                <button 
+                                                    type="button" 
+                                                    onClick={appMode === 'quiz1' ? generateQuiz1Points : generateQuiz2Points} 
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-3 rounded-lg font-bold transition-colors"
+                                                >
+                                                    Next Question
+                                                </button>
+                                            )}
+                                        </form>
+
+                                        {quizFeedback && (
+                                            <div className={`p-4 rounded-lg mb-8 flex items-center gap-3 ${quizFeedback.includes('Correct') ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'}`}>
+                                                {quizFeedback.includes('Correct') ? <CheckCircle className="w-6 h-6" /> : <XCircle className="w-6 h-6 text-red-500" />}
+                                                <span className="font-medium text-lg">{quizFeedback}</span>
+                                            </div>
+                                        )}
+
+                                        <button onClick={exitMode} className="text-slate-500 hover:text-slate-800 font-medium underline">
+                                            Quit to Menu
+                                        </button>
+                                    </div>
+                                )}
+
+                            </div>
+                        </div>
                     </div>
                 </div>
-            </div>
-        </div>
-    );
-}
+            );
+        }
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
