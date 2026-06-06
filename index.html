@@ -76,13 +76,13 @@
             
             const GAS_URL = "https://script.google.com/macros/s/AKfycbz_58XpfzovabyhM2ABHUmHL0OW745OjMhzKYDT8YrohoBMi4Ww80xw_vPcukwZQXU/exec";
             
-            const saveScoreToSheets = (currentUserName, currentMode, currentScore) => {
+            const saveScoreToSheets = (currentUserName, currentMode, currentScore, currentAttempts) => {
                 if (!GAS_URL || GAS_URL === "YOUR_GOOGLE_APPS_SCRIPT_WEB_APP_URL") return;
                 
                 // Using text/plain to avoid CORS preflight issues with Google Apps Script
                 fetch(GAS_URL, {
                     method: 'POST',
-                    body: JSON.stringify({ name: currentUserName, mode: currentMode, score: currentScore }),
+                    body: JSON.stringify({ name: currentUserName, mode: currentMode, score: currentScore, attempts: currentAttempts }),
                     headers: { 'Content-Type': 'text/plain;charset=utf-8' },
                 }).catch(err => console.error("Error saving score:", err));
             };
@@ -241,29 +241,29 @@
                 ? Math.max(currentDx, currentDy) 
                 : Math.sqrt(currentDx*currentDx + currentDy*currentDy);
             
-            setAttempts(a => a + 1);
+                // Calculate new attempts prior to state update to ensure fetch gets the latest number
+                const newAttempts = attempts + 1;
+                setAttempts(newAttempts);
 
-            if (parseFloat(userAnswer) === expected) {
-                const newScore = score + 1;
-                setScore(newScore);
-                setQuizFeedback('Correct! Loading next question...');
-                saveScoreToSheets(userName, appMode, newScore); // Send updated score
-                
-                if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-                autoAdvanceTimer.current = setTimeout(() => {
-                    if (appMode === 'quiz1') generateQuiz1Points();
-                    else generateQuiz2Points();
-                }, 3000);
-            } else {
-                setQuizFeedback(`Incorrect. The correct distance was ${expected}.`);
-                saveScoreToSheets(userName, appMode, score); // Sync current score on incorrect attempt
-                if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-            }
-        };
+                if (parseFloat(userAnswer) === expected) {
+                    const newScore = score + 1;
+                    setScore(newScore);
+                    setQuizFeedback('Correct! Loading next question...');
+                    saveScoreToSheets(userName, appMode, newScore, newAttempts); // Send updated score and attempts
+                    
+                    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                    autoAdvanceTimer.current = setTimeout(() => {
+                        if (appMode === 'quiz1') generateQuiz1Points();
+                        else generateQuiz2Points();
+                    }, 3000);
+                } else {
+                    setQuizFeedback(`Incorrect. The correct distance was ${expected}.`);
+                    saveScoreToSheets(userName, appMode, score, newAttempts); // Sync current score and new attempts
+                    if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
+                }
+            };
 
-        const exitMode = () => {
-                if (autoAdvanceTimer.current) clearTimeout(autoAdvanceTimer.current);
-                setAppMode('explore');
+            const exitMode = () => {
                 setUserName('');
                 setScore(0);
                 setAttempts(0);
